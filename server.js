@@ -230,44 +230,58 @@ app.get('/tv/:id/:slug?', async (req, res) => {
 });
 
 // ---------- RUTE: COUNTDOWN / WATCH REDIRECT ----------
-app.get('/watch/:type/:id', (req, res) => {
+app.get('/watch/:type/:id', async (req, res) => {
   const { type, id } = req.params;
-  const targetUrl = `https://zeromovies4k.com/es/watch/${type}/${id}`;
+  
+  try {
+    // Ambil data judul film/series dari TMDB untuk membuat slug yang akurat
+    const endpoint = type === 'tv' ? `/tv/${id}` : `/movie/${id}`;
+    const data = await tmdb(endpoint);
+    const title = data.title || data.name || 'video';
+    const itemSlug = slugify(title);
 
-  const bodyHtml = `
-    <div style="max-width: 600px; margin: 80px auto; text-align: center; padding: 40px; background: var(--card); border: 1px solid var(--line); border-radius: 12px;">
-      <h1 style="font-family: 'Black Han Sans'; font-size: 28px; margin-bottom: 16px;">Preparando tu reproductor...</h1>
-      <p style="color: var(--muted); margin-bottom: 24px;">Serás redirigido al reproductor en <span id="countdown" style="color: var(--red); font-weight: bold; font-size: 20px;">5</span> segundos.</p>
-      <div style="margin-bottom: 30px;">
-        <div style="width: 50px; height: 50px; border: 4px solid var(--line); border-top-color: var(--red); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+    // Target URL tujuan dengan domain .net dan slug yang sesuai
+    const targetUrl = `https://zeromovies4k.net/es/watch/${type}/${id}/${itemSlug}`;
+
+    const bodyHtml = `
+      <div style="max-width: 600px; margin: 80px auto; text-align: center; padding: 40px; background: var(--card); border: 1px solid var(--line); border-radius: 12px;">
+        <h1 style="font-family: 'Black Han Sans'; font-size: 28px; margin-bottom: 16px;">Preparando tu reproductor...</h1>
+        <p style="color: var(--muted); margin-bottom: 24px;">Serás redirigido al reproductor en <span id="countdown" style="color: var(--red); font-weight: bold; font-size: 20px;">5</span> segundos.</p>
+        <div style="margin-bottom: 30px;">
+          <div style="width: 50px; height: 50px; border: 4px solid var(--line); border-top-color: var(--red); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+        </div>
+        <a href="${targetUrl}" class="btn-watch" style="display: inline-block;">Ir ahora manualmente ▸</a>
       </div>
-      <a href="${targetUrl}" class="btn-watch" style="display: inline-block;">Ir ahora manualmente ▸</a>
-    </div>
-    <style>
-      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
-    <script>
-      let seconds = 5;
-      const countEl = document.getElementById('countdown');
-      const timer = setInterval(() => {
-        seconds--;
-        countEl.textContent = seconds;
-        if (seconds <= 0) {
-          clearInterval(timer);
-          window.location.href = "${targetUrl}";
-        }
-      }, 1000);
-    </script>
-  `;
+      <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      </style>
+      <script>
+        let seconds = 5;
+        const countEl = document.getElementById('countdown');
+        const timer = setInterval(() => {
+          seconds--;
+          countEl.textContent = seconds;
+          if (seconds <= 0) {
+            clearInterval(timer);
+            window.location.href = "${targetUrl}";
+          }
+        }, 1000);
+      </script>
+    `;
 
-  const headHtml = head({
-    title: 'Redirigiendo al reproductor · CineBox',
-    description: DEFAULT_DESC,
-    url: `${SITE_URL}/watch/${type}/${id}`,
-    robots: 'noindex, nofollow',
-  });
+    const headHtml = head({
+      title: 'Redirigiendo al reproductor · CineBox',
+      description: DEFAULT_DESC,
+      url: `${SITE_URL}/watch/${type}/${id}`,
+      robots: 'noindex, nofollow',
+    });
 
-  res.send(layout({ headHtml, bodyHtml, activeTab: '' }));
+    res.send(layout({ headHtml, bodyHtml, activeTab: '' }));
+  } catch (e) {
+    // Fallback jika gagal mengambil data TMDB
+    const targetUrl = `https://zeromovies4k.net/es/watch/${type}/${id}`;
+    res.redirect(targetUrl);
+  }
 });
 
 // ---------- RUTE: DETALLE AKTOR / PERSON ----------
