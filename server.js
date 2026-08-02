@@ -35,6 +35,69 @@ function slugify(title = '') {
     .slice(0, 60) || 'title';
 }
 
+// ---------- SITEMAP & ROBOTS.TXT ----------
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('User-agent: *\nAllow: /\nDisallow: /watch/\nSitemap: https://cinebox-espana.up.railway.app/sitemap.xml');
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  res.type('application/xml');
+  
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+  
+  // Halaman Utama & Kategori
+  const staticUrls = [
+    { loc: 'https://cinebox-espana.up.railway.app/', priority: '1.0', changefreq: 'daily' },
+    { loc: 'https://cinebox-espana.up.railway.app/movie', priority: '0.9', changefreq: 'daily' },
+    { loc: 'https://cinebox-espana.up.railway.app/tv', priority: '0.9', changefreq: 'daily' }
+  ];
+
+  staticUrls.forEach(item => {
+    xml += `  <url>\n`;
+    xml += `    <loc>${item.loc}</loc>\n`;
+    xml += `    <changefreq>${item.changefreq}</changefreq>\n`;
+    xml += `    <priority>${item.priority}</priority>\n`;
+    xml += `  </url>\n`;
+  });
+
+  try {
+    const [popularMovies, popularTv] = await Promise.all([
+      tmdb('/trending/movie/day'),
+      tmdb('/trending/tv/day')
+    ]);
+
+    if (popularMovies && popularMovies.results) {
+      popularMovies.results.forEach(movie => {
+        const slug = slugify(movie.title || 'movie');
+        xml += `  <url>\n`;
+        xml += `    <loc>https://cinebox-espana.up.railway.app/movie/${movie.id}/${slug}</loc>\n`;
+        xml += `    <changefreq>weekly</changefreq>\n`;
+        xml += `    <priority>0.8</priority>\n`;
+        xml += `  </url>\n`;
+      });
+    }
+
+    if (popularTv && popularTv.results) {
+      popularTv.results.forEach(tv => {
+        const slug = slugify(tv.name || 'tv');
+        xml += `  <url>\n`;
+        xml += `    <loc>https://cinebox-espana.up.railway.app/tv/${tv.id}/${slug}</loc>\n`;
+        xml += `    <changefreq>weekly</changefreq>\n`;
+        xml += `    <priority>0.8</priority>\n`;
+        xml += `  </url>\n`;
+      });
+    }
+  } catch (error) {
+    console.error('Error generating dynamic sitemap:', error);
+  }
+
+  xml += `</urlset>`;
+  res.send(xml);
+});
+
 // ---------- HOME: / ----------
 app.get('/', async (req, res) => {
   try {
@@ -234,13 +297,11 @@ app.get('/watch/:type/:id', async (req, res) => {
   const { type, id } = req.params;
   
   try {
-    // Ambil data judul film/series dari TMDB untuk membuat slug yang akurat
     const endpoint = type === 'tv' ? `/tv/${id}` : `/movie/${id}`;
     const data = await tmdb(endpoint);
     const title = data.title || data.name || 'video';
     const itemSlug = slugify(title);
 
-    // Target URL tujuan dengan domain .net dan slug yang sesuai
     const targetUrl = `https://zeromovies4k.net/es/watch/${type}/${id}/${itemSlug}`;
 
     const bodyHtml = `
@@ -278,7 +339,6 @@ app.get('/watch/:type/:id', async (req, res) => {
 
     res.send(layout({ headHtml, bodyHtml, activeTab: '' }));
   } catch (e) {
-    // Fallback jika gagal mengambil data TMDB
     const targetUrl = `https://zeromovies4k.net/es/watch/${type}/${id}`;
     res.redirect(targetUrl);
   }
