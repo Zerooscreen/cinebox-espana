@@ -17,12 +17,25 @@ app.use(express.urlencoded({ extended: true }));
 async function tmdb(endpoint, params = {}) {
   const url = new URL(`https://api.themoviedb.org/3${endpoint}`);
   url.searchParams.set('api_key', TMDB_API_KEY);
-  url.searchParams.set('language', 'es-ES');
+  
+  if (!endpoint.includes('/videos')) {
+    url.searchParams.set('language', 'es-ES');
+  }
+
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
+  if (!res.ok) {
+    if (url.searchParams.get('language') === 'es-ES') {
+      url.searchParams.delete('language');
+      const fallbackRes = await fetch(url.toString());
+      if (fallbackRes.ok) {
+        return fallbackRes.json();
+      }
+    }
+    throw new Error(`TMDB error: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -39,63 +52,43 @@ function slugify(title = '') {
 
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
-  res.send('User-agent: *\nAllow: /\nDisallow: /watch/\nSitemap: https://cinebox-espana.up.railway.app/sitemap.xml');
+  res.send(`User-agent: *\nAllow: /\nDisallow: /watch/\nSitemap: ${SITE_URL}/sitemap.xml`);
 });
 
 app.get('/sitemap.xml', async (req, res) => {
-  res.type('application/xml');
-  
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
-  
-  // Halaman Utama & Kategori
-  const staticUrls = [
-    { loc: 'https://cinebox-espana.up.railway.app/', priority: '1.0', changefreq: 'daily' },
-    { loc: 'https://cinebox-espana.up.railway.app/movie', priority: '0.9', changefreq: 'daily' },
-    { loc: 'https://cinebox-espana.up.railway.app/tv', priority: '0.9', changefreq: 'daily' }
-  ];
-
-  staticUrls.forEach(item => {
-    xml += `  <url>\n`;
-    xml += `    <loc>${item.loc}</loc>\n`;
-    xml += `    <changefreq>${item.changefreq}</changefreq>\n`;
-    xml += `    <priority>${item.priority}</priority>\n`;
-    xml += `  </url>\n`;
-  });
-
   try {
-    const [popularMovies, popularTv] = await Promise.all([
-      tmdb('/trending/movie/day'),
-      tmdb('/trending/tv/day')
+    const [trendingMovies, trendingTv] = await Promise.all([
+      tmdb('/trending/movie/day').catch(() => ({ results: [] })),
+      tmdb('/trending/tv/day').catch(() => ({ results: [] }))
     ]);
 
-    if (popularMovies && popularMovies.results) {
-      popularMovies.results.forEach(movie => {
-        const slug = slugify(movie.title || 'movie');
-        xml += `  <url>\n`;
-        xml += `    <loc>https://cinebox-espana.up.railway.app/movie/${movie.id}/${slug}</loc>\n`;
-        xml += `    <changefreq>weekly</changefreq>\n`;
-        xml += `    <priority>0.8</priority>\n`;
-        xml += `  </url>\n`;
-      });
-    }
+    const today = new Date().toISOString().slice(0, 10);
+    const urls = [
+      { loc: `${SITE_URL}/`, priority: '1.0', changefreq: 'daily' },
+      { loc: `${SITE_URL}/movie`, priority: '0.9', changefreq: 'daily' },
+      { loc: `${SITE_URL}/tv`, priority: '0.9', changefreq: 'daily' },
+      ...[...(trendingMovies.results || [])].map(m => ({ 
+        loc: `${SITE_URL}/movie/${m.id}/${encodeURIComponent(slugify(m.title) || 'movie')}`, 
+        priority: '0.8', 
+        changefreq: 'weekly' 
+      })),
+      ...[...(trendingTv.results || [])].map(t => ({ 
+        loc: `${SITE_URL}/tv/${t.id}/${encodeURIComponent(slugify(t.name) || 'tv')}`, 
+        priority: '0.8', 
+        changefreq: 'weekly' 
+      })),
+    ];
 
-    if (popularTv && popularTv.results) {
-      popularTv.results.forEach(tv => {
-        const slug = slugify(tv.name || 'tv');
-        xml += `  <url>\n`;
-        xml += `    <loc>https://cinebox-espana.up.railway.app/tv/${tv.id}/${slug}</loc>\n`;
-        xml += `    <changefreq>weekly</changefreq>\n`;
-        xml += `    <priority>0.8</priority>\n`;
-        xml += `  </url>\n`;
-      });
-    }
-  } catch (error) {
-    console.error('Error generating dynamic sitemap:', error);
+    const uniq = [...new Map(urls.map(u => [u.loc, u])).values()];
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${uniq.map(u => `  <url><loc>${u.loc}</loc><lastmod>${today}</lastmod><changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`).join('\n')}
+</urlset>`;
+
+    res.type('application/xml').send(xml);
+  } catch (e) {
+    res.status(500).send('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>');
   }
-
-  xml += `</urlset>`;
-  res.send(xml);
 });
 
 // ---------- HOME: / ----------
