@@ -98,10 +98,11 @@ app.get('/tv', (req, res) => renderHome(req, res, 'tv'));
 app.get('/movie/:id/:slug?', async (req, res) => {
   const { id } = req.params;
   try {
-    const [data, credits, videos] = await Promise.all([
+    const [data, credits, videos, similarData] = await Promise.all([
       tmdb(`/movie/${id}`),
       tmdb(`/movie/${id}/credits`),
       tmdb(`/movie/${id}/videos`),
+      tmdb(`/movie/${id}/similar`),
     ]);
     const correctSlug = slugify(data.title);
     if (req.params.slug !== correctSlug) {
@@ -109,6 +110,8 @@ app.get('/movie/:id/:slug?', async (req, res) => {
     }
 
     const runtime = data.runtime ? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}min` : 'No disponible';
+    const watchUrl = `https://zeromovies4k.com/es/watch/movie/${id}`; // Format tujuan baru dengan /es/
+
     const bodyHtml = `
       <a class="back-btn" href="/movie">← Volver</a>
       <div class="detail-hero">
@@ -126,12 +129,21 @@ app.get('/movie/:id/:slug?', async (req, res) => {
             <span class="m-item">${escapeHtml(data.status || '')}</span>
           </div>
           ${genreRow(data.genres)}
+          <div class="action-buttons">
+            <a href="${watchUrl}" class="btn-watch" target="_blank" rel="nofollow">Ver ahora ▸</a>
+          </div>
         </div>
       </div>
       <div class="section-block"><h3>Sinopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Sinopsis no disponible.'}</div></div>
       ${nativeBannerAd()}
       <div class="section-block"><h3>Tráiler</h3>${trailerBlock(videos)}</div>
       <div class="section-block"><h3>Reparto</h3>${castGrid(credits)}</div>
+      <div class="section-block">
+        <h3>Películas similares</h3>
+        <div class="similar-grid">
+          ${(similarData.results || []).slice(0, 6).map(item => posterCard(item, 'movie')).join('')}
+        </div>
+      </div>
       ${sideBannerAd()}
       ${movieJsonLd(data, `${SITE_URL}/movie/${id}/${encodeURIComponent(correctSlug)}`)}
     `;
@@ -163,15 +175,18 @@ app.get('/movie/:id/:slug?', async (req, res) => {
 app.get('/tv/:id/:slug?', async (req, res) => {
   const { id } = req.params;
   try {
-    const [data, credits, videos] = await Promise.all([
+    const [data, credits, videos, similarData] = await Promise.all([
       tmdb(`/tv/${id}`),
       tmdb(`/tv/${id}/credits`),
       tmdb(`/tv/${id}/videos`),
+      tmdb(`/tv/${id}/similar`),
     ]);
     const correctSlug = slugify(data.name);
     if (req.params.slug !== correctSlug) {
       return res.redirect(301, `/tv/${id}/${encodeURIComponent(correctSlug)}`);
     }
+
+    const watchUrl = `https://zeromovies4k.com/es/watch/tv/${id}`; // Format tujuan baru dengan /es/
 
     const seasons = (data.seasons || []).filter(s => s.season_number >= 0);
     const seasonsHtml = seasons.map(s => `
@@ -206,6 +221,9 @@ app.get('/tv/:id/:slug?', async (req, res) => {
             <span class="m-item">${escapeHtml(data.status || '')}</span>
           </div>
           ${genreRow(data.genres)}
+          <div class="action-buttons">
+            <a href="${watchUrl}" class="btn-watch" target="_blank" rel="nofollow">Ver ahora ▸</a>
+          </div>
         </div>
       </div>
       <div class="section-block"><h3>Sinopsis</h3><div class="bio-text">${escapeHtml(data.overview) || 'Sinopsis no disponible.'}</div></div>
@@ -215,6 +233,12 @@ app.get('/tv/:id/:slug?', async (req, res) => {
       <div class="section-block">
         <h3>Temporadas y episodios</h3>
         <div class="season-list" id="season-list">${seasonsHtml}</div>
+      </div>
+      <div class="section-block">
+        <h3>Series similares</h3>
+        <div class="similar-grid">
+          ${(similarData.results || []).slice(0, 6).map(item => posterCard(item, 'tv')).join('')}
+        </div>
       </div>
       ${sideBannerAd()}
       ${tvJsonLd(data, `${SITE_URL}/tv/${id}/${encodeURIComponent(correctSlug)}`)}
